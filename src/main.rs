@@ -2,7 +2,7 @@ use fantoccini::{Client, ClientBuilder, Locator};
 
 // let's set up the sequence of steps we want the browser to take
 #[tokio::main]
-async fn main() -> Result<(), fantoccini::error::CmdError> {
+async fn main() {
     let mut client = ClientBuilder::native()
         .connect("http://localhost:4444")
         .await
@@ -25,7 +25,9 @@ async fn main() -> Result<(), fantoccini::error::CmdError> {
         .await;
     }
 
-    client.close().await
+    client.close().await.unwrap();
+
+    std::io::stdin().read_line(&mut String::new()).unwrap();
 }
 
 async fn get_link(client: &mut Client, url: &str) {
