@@ -6,3 +6,14 @@ pub struct Animix {
     pub id: String,
     pub e: String,
 }
+
+#[derive(Deserialize)]
+pub struct GogoStream {
+    pub source: Option<GogoStreamSource>,
+    pub source_bk: Option<GogoStreamSource>,
+}
+
+#[derive(Deserialize)]
+pub struct GogoStreamSource {
+    pub file: String,
+}

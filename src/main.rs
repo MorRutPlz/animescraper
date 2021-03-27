@@ -1,9 +1,11 @@
 mod model;
 
 use futures::StreamExt;
-use model::Animix;
+use indicatif::{ProgressBar, ProgressStyle};
+use model::{Animix, GogoStream};
 use scraper::{Html, Selector};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use tokio::fs::OpenOptions;
@@ -35,14 +37,25 @@ async fn main() {
             .unwrap(),
     ));
 
-    futures::stream::iter(
-        list.iter()
-            .filter(|x| x.e == "1")
-            .map(|x| (x, format!("https://animixplay.to/v1/{}", x.id)))
-            .map(|(anime, url)| (anime, url, success.clone(), errors.clone()))
-            .map(|(anime, i, success, errors)| async move {
-                println!("Attempting `{}`", anime.title);
+    let list_a = list
+        .iter()
+        .filter(|x| x.e == "1")
+        .map(|x| (x, format!("https://animixplay.to/v1/{}", x.id)))
+        .collect::<Vec<_>>();
 
+    let pb = ProgressBar::new(list_a.len() as u64);
+
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .progress_chars("##-"),
+    );
+
+    futures::stream::iter(
+        list_a
+            .into_iter()
+            .map(|(anime, url)| (anime, url, pb.clone(), success.clone(), errors.clone()))
+            .map(|(anime, i, pb, success, errors)| async move {
                 match reqwest::get(&i).await {
                     Ok(resp) => match resp.text().await {
                         Ok(n) => match get_episodes(n).await {
@@ -79,6 +92,9 @@ async fn main() {
                         panic!("failed to send GET request with url `{}`: {}", i, e)
                     }
                 }
+
+                pb.inc(1);
+                pb.set_message(&anime.title);
             }),
     )
     .buffer_unordered(8)
@@ -118,10 +134,86 @@ async fn get_episodes(response: String) -> Result<Vec<String>, String> {
             None => return Err(format!("link not a string")),
         };
 
+        scrap_further(link.clone()).await;
+
         episodes.push((index, link));
     }
 
     episodes.sort_by(|a, b| a.0.cmp(&b.0));
 
     Ok(episodes.into_iter().map(|(_, b)| b).collect())
+}
+
+async fn scrap_further(link: String) {
+    let mut sources = HashMap::new();
+
+    let mut split = link.split("?id=");
+    split.next();
+
+    let video_id = match split.next() {
+        Some(n) => match n.split("&").next() {
+            Some(n) => n,
+            None => return,
+        },
+        None => return,
+    };
+
+    // VIDSTREAMING
+    // https://gogo-play.net/ajax.php?id=MTUwNTEw
+
+    match reqwest::get(&format!("https://gogo-play.net/ajax.php?id={}", video_id)).await {
+        Ok(n) => match n.json::<GogoStream>().await {
+            Ok(n) => {
+                let mut gogos = Vec::new();
+
+                match n.source {
+                    Some(n) => gogos.push(n),
+                    None => {}
+                }
+
+                match n.source_bk {
+                    Some(n) => gogos.push(n),
+                    None => {}
+                }
+
+                if gogos.len() > 0 {
+                    sources.insert("ANIMIX-GOGO", gogos);
+                }
+            }
+            Err(e) => {}
+        },
+        Err(e) => {}
+    }
+
+    // MULTI QUALITY
+    // https://gogo-play.net/loadserver.php?id=MTUwNTEw
+
+    match reqwest::get(&format!(
+        "https://gogo-play.net/loadserver.php?id={}",
+        video_id
+    ))
+    .await
+    {
+        Ok(n) => match n.json::<GogoStream>().await {
+            Ok(n) => {
+                let mut gogos = Vec::new();
+
+                match n.source {
+                    Some(n) => gogos.push(n),
+                    None => {}
+                }
+
+                match n.source_bk {
+                    Some(n) => gogos.push(n),
+                    None => {}
+                }
+
+                if gogos.len() > 0 {
+                    sources.insert("ANIMIX-GOGO", gogos);
+                }
+            }
+            Err(e) => {}
+        },
+        Err(e) => {}
+    }
 }
