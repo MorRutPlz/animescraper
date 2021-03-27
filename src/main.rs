@@ -51,54 +51,61 @@ async fn main() {
             .progress_chars("##-"),
     );
 
-    futures::stream::iter(
-        list_a
-            .into_iter()
-            .map(|(anime, url)| (anime, url, success.clone(), errors.clone()))
-            .map(|(anime, i, success, errors)| async move {
-                match reqwest::get(&i).await {
-                    Ok(resp) => match resp.text().await {
-                        Ok(n) => match get_episodes(n).await {
-                            Ok(n) => {
-                                let entry = format!(
-                                    "Title: {}; URL: {}; Episodes ({}):\n{:#?}\n\n",
-                                    anime.title,
-                                    i,
-                                    n.len(),
-                                    n
-                                );
+    println!(
+        "Done with {} anime",
+        futures::stream::iter(
+            list_a
+                .into_iter()
+                .map(|(anime, url)| (anime, url, pb.clone(), success.clone(), errors.clone()))
+                .map(|(anime, i, pb, success, errors)| async move {
+                    match reqwest::get(&i).await {
+                        Ok(resp) => match resp.text().await {
+                            Ok(n) => match get_episodes(n).await {
+                                Ok(n) => {
+                                    let entry = format!(
+                                        "Title: {}; URL: {}; Episodes ({}):\n{:#?}\n\n",
+                                        anime.title,
+                                        i,
+                                        n.len(),
+                                        n
+                                    );
 
-                                success
-                                    .lock()
-                                    .await
-                                    .write_all(entry.as_bytes())
-                                    .await
-                                    .unwrap();
-                            }
+                                    success
+                                        .lock()
+                                        .await
+                                        .write_all(entry.as_bytes())
+                                        .await
+                                        .unwrap();
+                                }
+                                Err(e) => {
+                                    errors
+                                        .lock()
+                                        .await
+                                        .write_all(
+                                            format!("URL: {}; Message: {}\n", i, e).as_bytes(),
+                                        )
+                                        .await
+                                        .unwrap();
+                                }
+                            },
                             Err(e) => {
-                                errors
-                                    .lock()
-                                    .await
-                                    .write_all(format!("URL: {}; Message: {}\n", i, e).as_bytes())
-                                    .await
-                                    .unwrap();
+                                panic!("failed to read text from response with url `{}`: {}", i, e)
                             }
                         },
                         Err(e) => {
-                            panic!("failed to read text from response with url `{}`: {}", i, e)
+                            panic!("failed to send GET request with url `{}`: {}", i, e)
                         }
-                    },
-                    Err(e) => {
-                        panic!("failed to send GET request with url `{}`: {}", i, e)
                     }
-                }
 
-                println!("Done with {}", anime.title);
-            }),
-    )
-    .buffer_unordered(8)
-    .collect::<Vec<()>>()
-    .await;
+                    pb.inc(1);
+                    pb.set_message(&anime.title);
+                }),
+        )
+        .buffer_unordered(16)
+        .collect::<Vec<()>>()
+        .await
+        .len()
+    );
 }
 
 async fn get_episodes(response: String) -> Result<Vec<String>, String> {
