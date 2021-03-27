@@ -54,8 +54,8 @@ async fn main() {
     futures::stream::iter(
         list_a
             .into_iter()
-            .map(|(anime, url)| (anime, url, pb.clone(), success.clone(), errors.clone()))
-            .map(|(anime, i, pb, success, errors)| async move {
+            .map(|(anime, url)| (anime, url, success.clone(), errors.clone()))
+            .map(|(anime, i, success, errors)| async move {
                 match reqwest::get(&i).await {
                     Ok(resp) => match resp.text().await {
                         Ok(n) => match get_episodes(n).await {
@@ -93,8 +93,7 @@ async fn main() {
                     }
                 }
 
-                pb.inc(1);
-                pb.set_message(&anime.title);
+                println!("Done with {}", anime.title);
             }),
     )
     .buffer_unordered(8)
@@ -134,7 +133,7 @@ async fn get_episodes(response: String) -> Result<Vec<String>, String> {
             None => return Err(format!("link not a string")),
         };
 
-        scrap_further(link.clone()).await;
+        //scrap_further(link.clone()).await;
 
         episodes.push((index, link));
     }
