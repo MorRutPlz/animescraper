@@ -113,6 +113,10 @@ async fn get_episodes(response: String) -> Result<Vec<String>, String> {
     let selector = Selector::parse("#epslistplace").unwrap();
     let results = html.select(&selector).collect::<Vec<_>>();
 
+    if results.len() < 1 {
+        return Err(format!("#eplistplace not found"));
+    }
+
     let value = match serde_json::from_str::<Value>(&results[0].inner_html()) {
         Ok(n) => n,
         Err(e) => return Err(format!("couldn't parse json: {}", e)),
